@@ -1,0 +1,115 @@
+<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Umbral</title>
+<style>
+:root{--bg:#091114;--pn:#0f1a1e;--ln:#1f2f35;--tx:#dcd8cc;--mu:#7f9299;--ac:#93b6c2;--er:#c0646c;color-scheme:dark}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font:17px/1.6 Georgia,'Times New Roman',serif;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+.scr{display:flex;flex-direction:column;height:100%}.scr[hidden]{display:none}
+header,.top{padding:10px 14px;border-bottom:1px solid var(--ln);background:var(--pn)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.mu{color:var(--mu);font-size:14px}
+button{font:inherit;font-size:15px;background:var(--ac);color:#0a1418;border:0;border-radius:6px;padding:10px 16px}
+button.g{background:transparent;color:var(--ac);padding:6px 8px}button.d{background:var(--er);color:#fff}button:disabled{opacity:.4}
+#chat,.body{flex:1;overflow-y:auto;padding:16px 14px}
+.m p{margin:0 0 .9em}.m.user{color:var(--ac);font-style:italic;border-left:2px solid var(--ac);padding-left:12px;margin-bottom:1em}
+#bar{display:flex;gap:8px;padding:10px;border-top:1px solid var(--ln);background:var(--pn);align-items:flex-end}
+#bar textarea{flex:1;resize:none}
+textarea,input,select{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--ln);border-radius:6px;padding:9px;font:inherit;font-size:16px}
+#banner{background:#2b1519;color:#f0b9bd;padding:10px 14px;font-size:14px}
+.card{border-top:1px solid var(--ln);padding:12px 0;margin-bottom:6px}
+.meter{height:3px;background:var(--ln)}.meter i{display:block;height:100%;background:var(--ac)}
+details{margin-top:6px;font-size:13px;color:var(--mu)}
+label{display:block;font-size:13px;color:var(--mu);margin:10px 0 3px}
+pre{white-space:pre-wrap;font-size:12px;color:var(--mu)}
+</style></head><body>
+<div id="home" class="scr"></div>
+<div id="story" class="scr" hidden><header id="sh"></header><div id="chat"></div><div id="banner" hidden></div>
+<div id="bar"><textarea id="inp" rows="2" placeholder="¿Qué haces, dices o piensas?"></textarea><button id="send">Enviar</button></div></div>
+<div id="chars" class="scr" hidden></div><div id="set" class="scr" hidden></div>
+<script>
+const $=s=>document.querySelector(s),sleep=ms=>new Promise(r=>setTimeout(r,ms)),uid=()=>Math.random().toString(36).slice(2,9);
+const h=(t,a={},...k)=>{const e=document.createElement(t);for(const x in a){const v=a[x];if(x==='on')for(const y in v)e.addEventListener(y,v[y]);else if(x==='style'||!(x in e))e.setAttribute(x,v);else e[x]=v}e.append(...k);return e};
+const LS={get:(k,d)=>{try{const v=JSON.parse(localStorage.getItem(k));return v==null?d:v}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+const log=m=>{const l=LS.get('log',[]);l.push(new Date().toLocaleTimeString()+' '+m);LS.set('log',l.slice(-80))};
+const native=!!(window.Capacitor&&Capacitor.isNativePlatform&&Capacitor.isNativePlatform());
+const SS=native?Capacitor.registerPlugin('SecureStoragePlugin'):null;
+const getKey=async()=>{if(SS){try{return(await SS.get({key:'or_key'})).value}catch{return''}}return localStorage.getItem('or_key')||''};
+const setKey=async v=>{if(SS){if(v)await SS.set({key:'or_key',value:v});else{try{await SS.remove({key:'or_key'})}catch{}}}else if(v)localStorage.setItem('or_key',v);else localStorage.removeItem('or_key')};
+let stories=LS.get('stories',[]),cur=null,err='',busy=false,at='home',prev='home';
+let cfg=Object.assign({model:'',free:[]},LS.get('cfg',{}));
+const save=()=>{if(cur){cur.updated=Date.now();const i=stories.findIndex(x=>x.id===cur.id);if(i<0)stories.push(cur);else stories[i]=cur}LS.set('stories',stories);LS.set('cfg',cfg)};
+const L={trust:'Confianza',attraction:'Atracción',affinity:'Afinidad',intimacy:'Intimidad',tension:'Tensión'};
+const relInit=s=>{for(const c of s.chars)s.rel[c.name]=s.rel[c.name]||{trust:50,attraction:20,affinity:40,intimacy:0,tension:20}};
+const tpl=()=>({id:'s'+Date.now(),name:'Nueva historia',scene:'Un café casi vacío, poco antes de medianoche. Llueve.',time:'Noche',rel:{},facts:[],summary:'',sumUpTo:0,msgs:[],updated:Date.now(),chars:[
+{name:'Lucía',age:34,persona:'Reservada, irónica, observadora. Desconfía de los favores.',goal:'Recuperar algo que perdió hace años.',secret:'Conoce al protagonista de antes y no lo dice.',mood:'cautelosa'},
+{name:'Mateo',age:41,persona:'Cálido pero evasivo. Evita el conflicto y miente por comodidad.',goal:'Que nadie descubra su deuda.',secret:'Debe dinero a gente peligrosa.',mood:'inquieto'}]});
+function sysPrompt(s){relInit(s);return `Eres narrador, director de escena y compañero de improvisación de una ficción interactiva en español. El protagonista es el usuario (segunda persona): nunca decidas sus acciones, palabras ni pensamientos.
+Reglas: todos los personajes son adultos, con deseos propios, secretos y contradicciones. No son complacientes: pueden rechazar, mentir, discutir, desconfiar, equivocarse y tomar la iniciativa sin que nadie se lo pida. Muestra con gestos, silencios y subtexto; no expliques lo que piensan ni reveles secretos sin motivo. Un personaje solo sabe lo que presenció o le contaron. La intimidad surge de forma gradual y solo si encaja con la personalidad y el consentimiento del personaje. El mundo no gira solo alrededor del protagonista. Prosa literaria de 120 a 220 palabras, sin listas ni comentarios fuera de la ficción.
+ESCENA: ${s.scene} (${s.time})
+PERSONAJES (los secretos son solo para ti, narrador):
+${s.chars.map(c=>`- ${c.name}, ${c.age}. ${c.persona} Objetivo: ${c.goal} Secreto: ${c.secret} Estado: ${c.mood}. Relación con el protagonista (0-100): ${JSON.stringify(s.rel[c.name])}`).join('\n')}
+HECHOS CONFIRMADOS: ${(s.facts||[]).join(' | ')||'(ninguno)'}
+RESUMEN PREVIO: ${s.summary||'(inicio)'}
+Responde SOLO con JSON: {"narration":"texto","mood":{"Nombre":"estado breve"},"rel":{"Nombre":{"trust":0,"attraction":0,"affinity":0,"intimacy":0,"tension":0}},"facts":["hecho nuevo e importante"]}. En rel pon cambios pequeños (-10 a 10), casi siempre 0 o 1-3. Si no puedes dar JSON, responde solo con la narración.`}
+function parse(t){t=String(t||'');let o=null;const m=t.match(/\{[\s\S]*\}/);if(m){try{o=JSON.parse(m[0])}catch{}}
+if(o&&typeof o.narration==='string'&&o.narration.trim())return o;
+const n=t.match(/"narration"\s*:\s*"((?:[^"\\]|\\.)*)"/);if(n){try{return{narration:JSON.parse('"'+n[1]+'"')}}catch{}}
+const c=t.replace(/```json|```/g,'').trim();return c.length<5||c[0]==='{'?null:{narration:c}}
+async function call(messages,max){const key=await getKey();if(!key)throw Object.assign(new Error('Falta la clave API'),{status:401});
+const models=[cfg.model,...cfg.free.filter(x=>x!==cfg.model).slice(0,3)].filter(Boolean);if(!models.length)throw new Error('Elige un modelo en Ajustes');let last;
+for(const model of models){for(let a=0;a<2;a++){const ctl=new AbortController(),to=setTimeout(()=>ctl.abort(),60000);
+try{const r=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',signal:ctl.signal,headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','X-Title':'Umbral'},body:JSON.stringify({model,messages,temperature:0.9,max_tokens:max})});
+const j=await r.json().catch(()=>null);if(!r.ok)throw Object.assign(new Error((j&&j.error&&j.error.message)||'HTTP '+r.status),{status:r.status});
+const t=j&&j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content;if(!t||!String(t).trim())throw new Error('Respuesta vacía');return{t:String(t),model}}
+catch(e){last=e;log(model+': '+e.message);if(e.status===401||e.status===402)throw e;if([404,400,429].includes(e.status))break;await sleep(800)}finally{clearTimeout(to)}}}
+throw last}
+function apply(o){const s=cur;s.msgs.push({id:uid(),role:'assistant',text:String(o.narration).trim()});
+if(o.mood&&typeof o.mood==='object')for(const c of s.chars)if(typeof o.mood[c.name]==='string')c.mood=o.mood[c.name].slice(0,60);
+if(o.rel&&typeof o.rel==='object'){relInit(s);for(const n in o.rel){const r=s.rel[n],v=o.rel[n];if(!r||!v||typeof v!=='object')continue;for(const k in L){const d=Number(v[k]);if(isFinite(d))r[k]=Math.max(0,Math.min(100,r[k]+Math.max(-10,Math.min(10,d))))}}}
+if(Array.isArray(o.facts))s.facts=[...(s.facts||[]),...o.facts.filter(f=>typeof f==='string'&&f.trim()).map(f=>f.slice(0,200))].slice(-40)}
+async function ask(){const s=cur;let hist=s.msgs.slice(Math.max(s.sumUpTo,s.msgs.length-14)).map(m=>({role:m.role,content:m.text}));
+while(hist.length&&hist[0].role!=='user')hist.shift();
+const{t}=await call([{role:'system',content:sysPrompt(s)},...hist],900);const o=parse(t);if(!o)throw new Error('Respuesta ilegible');apply(o)}
+async function summarize(){const s=cur,upto=s.msgs.length-8;if(upto-s.sumUpTo<14)return;
+const ch=s.msgs.slice(s.sumUpTo,upto).filter(m=>!m.hidden).map(m=>(m.role==='user'?'Protagonista: ':'Narrador: ')+m.text).join('\n');
+try{const{t}=await call([{role:'user',content:'Actualiza el resumen de esta historia en máximo 180 palabras: solo hechos y estado de las relaciones, sin inventar.\nRESUMEN PREVIO: '+(s.summary||'(ninguno)')+'\nNUEVOS SUCESOS:\n'+ch}],400);s.summary=t.trim();s.sumUpTo=upto;save()}catch(e){log('Resumen falló: '+e.message)}}
+const friendly=e=>e.status===401?'La clave API falta o fue rechazada. Revísala en Ajustes.':e.status===402?'Sin crédito para este modelo. Elige uno gratuito en Ajustes.':e.status===429?'Límite de uso alcanzado en los modelos probados. Espera un momento y reintenta.':e.name==='AbortError'?'La conexión tardó demasiado. Reintenta.':e instanceof TypeError?'Sin conexión con OpenRouter.':'No hubo respuesta ('+e.message+'). Tu mensaje se conservó.';
+async function turn(){if(busy)return;busy=true;err='';if(at==='story')renderStory();
+try{await ask()}catch(e){err=friendly(e);log('ERROR '+(e.status||'')+' '+e.message)}
+busy=false;save();if(at==='story')renderStory();if(!err)summarize()}
+function send(){const t=$('#inp').value.trim();if(!t||busy||err)return;cur.msgs.push({id:uid(),role:'user',text:t});$('#inp').value='';save();turn()}
+function discard(){const m=cur.msgs.pop();if(m&&!m.hidden)$('#inp').value=m.text;err='';save();renderStory()}
+function relBox(s){relInit(s);return h('details',{},h('summary',{textContent:'Relaciones'}),...s.chars.map(c=>h('div',{className:'card'},h('div',{textContent:c.name+' · '+c.mood}),...Object.keys(L).map(k=>h('div',{className:'row mu'},h('span',{textContent:L[k],style:'width:90px'}),h('div',{className:'meter',style:'flex:1'},h('i',{style:'width:'+s.rel[c.name][k]+'%'})))))))}
+function renderStory(){const s=cur;
+$('#sh').replaceChildren(h('div',{className:'row'},h('button',{className:'g',textContent:'‹ Historias',on:{click:()=>{save();show('home')}}}),h('b',{textContent:s.name}),h('button',{className:'g',textContent:'Ajustes',on:{click:()=>show('set')}})),
+h('div',{className:'mu',textContent:s.scene+' · '+s.time}),
+h('div',{className:'row'},h('span',{className:'mu',textContent:'Presentes: '+s.chars.map(c=>c.name).join(', ')}),h('button',{className:'g',textContent:'Personajes',on:{click:()=>show('chars')}})),relBox(s));
+const c=$('#chat');c.replaceChildren(...s.msgs.filter(m=>!m.hidden).map(m=>h('div',{className:'m '+m.role},...m.text.split(/\n+/).map(p=>h('p',{textContent:p})))));
+if(!s.msgs.length&&!busy)c.append(h('div',{},h('p',{className:'mu',textContent:'La escena está lista para empezar.'}),h('button',{textContent:'Comenzar',on:{click:()=>{s.msgs.push({id:uid(),role:'user',hidden:1,text:'(Comienza la escena con una apertura que sitúe al protagonista y deje algo en movimiento.)'});turn()}}})));
+if(busy)c.append(h('p',{className:'mu',textContent:'El narrador está escribiendo…'}));
+const b=$('#banner');b.hidden=!err;b.replaceChildren(h('div',{textContent:err}),h('div',{className:'row'},h('button',{className:'g',textContent:'Reintentar',on:{click:()=>turn()}}),h('button',{className:'g',textContent:'Descartar mi mensaje',on:{click:discard}})));
+$('#send').disabled=busy||!!err;c.scrollTop=c.scrollHeight}
+function renderHome(){const b=h('div',{className:'body'});
+$('#home').replaceChildren(h('div',{className:'top row'},h('b',{textContent:'Umbral'}),h('button',{className:'g',textContent:'Ajustes',on:{click:()=>show('set')}})),b);
+b.append(h('button',{textContent:'Nueva historia',on:{click:()=>{cur=tpl();err='';stories.push(cur);save();show('story')}}}));
+for(const s of[...stories].sort((a,b)=>b.updated-a.updated))b.append(h('div',{className:'card row'},h('div',{style:'flex:1',on:{click:()=>{cur=s;err='';show('story')}}},h('b',{textContent:s.name}),h('div',{className:'mu',textContent:new Date(s.updated).toLocaleDateString()+' · '+s.msgs.filter(m=>!m.hidden).length+' mensajes'})),h('button',{className:'g',textContent:'Eliminar',on:{click:()=>{if(confirm('¿Eliminar «'+s.name+'»?')){stories=stories.filter(x=>x!==s);if(cur===s)cur=null;save();renderHome()}}}})))}
+function renderChars(){const s=cur,b=h('div',{className:'body'});
+const f=(lab,o,k,rows,type)=>h('div',{},h('label',{textContent:lab}),rows?h('textarea',{rows,value:o[k],on:{input:e=>{o[k]=e.target.value;save()}}}):h('input',{type:type||'text',value:o[k],on:{input:e=>{o[k]=type==='number'?+e.target.value:e.target.value;save()}}}));
+b.append(f('Nombre de la historia',s,'name'),f('Escenario',s,'scene',2),f('Momento',s,'time'));
+s.chars.forEach((c,i)=>b.append(h('div',{className:'card'},f('Nombre',c,'name'),f('Edad (adulto)',c,'age',0,'number'),f('Personalidad',c,'persona',3),f('Objetivo',c,'goal',2),f('Secreto (solo lo sabe el narrador)',c,'secret',2),s.chars.length>1?h('button',{className:'g',textContent:'Quitar personaje',on:{click:()=>{s.chars.splice(i,1);save();renderChars()}}}):'')));
+b.append(h('button',{textContent:'Añadir personaje',on:{click:()=>{s.chars.push({name:'Nuevo',age:30,persona:'',goal:'',secret:'',mood:'neutral'});save();renderChars()}}}),h('p',{}),h('button',{className:'d',textContent:'Reiniciar escena',on:{click:()=>{if(confirm('Se borrará la conversación y la memoria de esta historia.')){Object.assign(s,{msgs:[],facts:[],summary:'',sumUpTo:0,rel:{}});save();show('story')}}}}));
+$('#chars').replaceChildren(h('div',{className:'top'},h('button',{className:'g',textContent:'‹ Volver a la historia',on:{click:()=>show('story')}})),b)}
+async function loadModels(){try{const r=await fetch('https://openrouter.ai/api/v1/models'),j=await r.json();
+cfg.free=j.data.filter(m=>m.id.endsWith(':free')).sort((a,b)=>(b.context_length||0)-(a.context_length||0)).map(m=>m.id);if(!cfg.free.includes(cfg.model))cfg.model=cfg.free[0]||'';save()}catch(e){log('Modelos: '+e.message);alert('No se pudo cargar la lista de modelos.')}}
+async function renderSet(){if(!cfg.free.length)await loadModels();const k=await getKey(),b=h('div',{className:'body'});
+const ki=h('input',{type:'password',autocomplete:'off',placeholder:k?'Clave guardada. Escribe para reemplazarla':'sk-or-...'});
+const sel=h('select',{on:{change:e=>{cfg.model=e.target.value;save()}}},...cfg.free.map(id=>h('option',{value:id,textContent:id,selected:id===cfg.model})));
+b.append(h('label',{textContent:'Clave API de OpenRouter'}),ki,h('div',{className:'row'},h('button',{textContent:'Guardar clave',on:{click:async()=>{if(!ki.value.trim())return;await setKey(ki.value.trim());alert('Clave guardada');renderSet()}}}),h('button',{className:'g',textContent:'Borrar clave',on:{click:async()=>{await setKey('');renderSet()}}})),
+h('label',{textContent:'Modelo principal (gratuitos). Si falla, la app prueba otros automáticamente'}),sel,h('p',{},h('button',{className:'g',textContent:'Actualizar lista de modelos',on:{click:async()=>{await loadModels();renderSet()}}})),
+h('label',{textContent:'Registro técnico'}),h('pre',{textContent:LS.get('log',[]).join('\n')||'Sin errores registrados.'}),h('button',{className:'g',textContent:'Borrar registro',on:{click:()=>{LS.set('log',[]);renderSet()}}}));
+$('#set').replaceChildren(h('div',{className:'top'},h('button',{className:'g',textContent:'‹ Volver',on:{click:()=>show(cur&&prev==='story'?'story':prev==='set'?'home':prev)}})),b)}
+const R={home:renderHome,story:renderStory,chars:renderChars,set:renderSet};
+function show(n){if(n==='story'&&!cur)n='home';prev=at;at=n;for(const x in R)$('#'+x).hidden=x!==n;R[n]()}
+$('#send').onclick=send;show('home');
+</script></body></html>
